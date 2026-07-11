@@ -62,15 +62,16 @@ static void setupFakeImageInfo(void) {
 
 %ctor {
     // 1. 在 Hook 前先取得真實函數位址
-    orig_dyld_get_image_name = (const char *(*)(uint32_t))dlsym(RTLD_DEFAULT, "_dyld_get_image_name");
-    orig_dyld_get_image_header = (const struct mach_header *(*)(uint32_t))dlsym(RTLD_DEFAULT, "_dyld_get_image_header");
+    orig_dyld_get_image_name = (const char ()(uint32_t))dlsym(RTLD_DEFAULT, "_dyld_get_image_name");
+    orig_dyld_get_image_header = (const struct mach_header ()(uint32_t))dlsym(RTLD_DEFAULT, "_dyld_get_image_header");
 
     // 2. 準備偽裝用的 image 資訊
     setupFakeImageInfo();
 
     // 3. 使用 fishhook 進行符號重定
     struct rebinding rebindings[] = {
-        {"_dyld_get_image_name", (void *)my_dyld_get_image_name, (void **)&orig_dyld_get_image_name},
-        {"_dyld_get_image_header", (void *)my_dyld_get_image_header, (void **)&orig_dyld_get_image_header}
+        {"_dyld_get_image_name", (void )my_dyld_get_image_name, (void *)&orig_dyld_get_image_name},
+        {"_dyld_get_image_header", (void )my_dyld_get_image_header, (void *)&orig_dyld_get_image_header}
     };
     rebind_symbols(rebindings, sizeof(rebindings) / sizeof(struct rebinding));
+}
