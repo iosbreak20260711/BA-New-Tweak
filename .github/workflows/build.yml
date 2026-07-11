@@ -3,74 +3,66 @@ name: Build BABypass Tweak
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:   # 允許手動觸發
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+
+    env:
+      THEOS: ${{ github.workspace }}/theos
 
     steps:
       - name: 檢出倉庫
         uses: actions/checkout@v4
 
-      - name: 安裝 Theos（帶重試與錯誤排查）
-        run: |
-          # 顯示網路基本資訊（出事時可查）
-          echo "=== DNS 測試 ==="
-          nslookup github.com || true
-          ping -c 2 github.com || true
+      - name: 安裝依賴 (ldid / xz)
+        run: brew install ldid xz
 
-          # 嘗試 clone theos，最多 3 次
+      - name: 安裝 Theos
+        run: |
           for i in 1 2 3; do
-            echo "::group::🔁 第 $i 次嘗試 git clone theos"
-            if git clone --recursive https://github.com/theos/theos.git ~/theos; then
+            echo "::group::🔁 第 $i 次嘗試 clone theos"
+            if git clone --recursive https://github.com/theos/theos.git "$THEOS"; then
               echo "::endgroup::"
               echo "✅ Theos 克隆成功"
               break
-            else
-              echo "::endgroup::"
-              echo "❌ 第 $i 次失敗，清除殘留並等待 15 秒..."
-              rm -rf ~/theos 2>/dev/null || true
-              sleep 15
             fi
+            echo "::endgroup::"
+            echo "❌ 第 $i 次失敗,清除後等 10 秒重試"
+            rm -rf "$THEOS"
+            sleep 10
           done
+          [ -d "$THEOS/bin" ] || { echo "⛔ Theos 安裝失敗"; exit 1; }
 
-          # 最終檢查
-          if [ ! -d ~/theos ]; then
-            echo "⛔ 嘗試 3 次仍無法安裝 Theos，工作流中止"
-            exit 1
-          fi
-
-          # 子模塊二次確保
-          cd ~/theos
-          git submodule update --init --recursive || echo "⚠️ 子模塊更新未完全，但嘗試繼續"
-          echo "export THEOS=~/theos" >> ~/.bash_profile
+      - name: 下載 iOS SDK
+        run: |
+          echo "下載 Theos SDKs..."
+          curl -sL https://github.com/theos/sdks/archive/refs/heads/master.tar.gz -o sdks.tar.gz
+          TMP=$(mktemp -d)
+          tar -xf sdks.tar.gz -C "$TMP"
+          mv "$TMP"/sdks-master/*.sdk "$THEOS/sdks/"
+          rm -rf sdks.tar.gz "$TMP"
+          echo "已安裝的 SDK:"
+          ls "$THEOS/sdks/"
 
       - name: 編譯 dylib
         run: |
-          # 導入環境變量
-          export THEOS=~/theos
-          # 進入專案目錄
-          cd $GITHUB_WORKSPACE
           echo "開始 make..."
-          make clean
-          make -j$(sysctl -n hw.logicalcpu)
+          make clean || true
+          make -j"$(sysctl -n hw.logicalcpu)" FINALPACKAGE=1
           echo "✅ 編譯完成"
 
       - name: 收集產物
         run: |
           mkdir -p artifacts
-          # Theos 預設編譯產物路徑
           if [ -f ".theos/obj/BABypass.dylib" ]; then
             cp .theos/obj/BABypass.dylib artifacts/
-          elif [ -f "BABypass.dylib" ]; then
-            cp BABypass.dylib artifacts/
-          else
-            # 嘗試尋找任何 .dylib 檔
-            find . -name ".dylib" -not -path "./.theos/" -exec cp {} artifacts/ \;
           fi
-          echo "產物內容："
+          find . -name ".dylib" -not -path "./theos/" -exec cp {} artifacts/ \; 2>/dev/null || true
+          find ./packages -name "*.deb" -exec cp {} artifacts/ \; 2>/dev/null || true
+          echo "產物內容:"
           ls -lh artifacts/
 
       - name: 上傳 Artifact (v4)
