@@ -1,9 +1,11 @@
-# Makefile
-THEOS_DEVICE_IP = localhost
+TARGET := iphone:clang:latest:14.0
+ARCHS := arm64 arm64e
+
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = BABypass
+LIBRARY_NAME = BABypass
 BABypass_FILES = Tweak.xm fishhook.c
-BABypass_FRAMEWORKS = Foundation
+BABypass_CFLAGS = -fobjc-arc
+BABypass_FRAMEWORKS = Foundation UIKit
 
-include $(THEOS_MAKE_PATH)/tweak.mk
+include $(THEOS_MAKE_PATH)/library.mk
