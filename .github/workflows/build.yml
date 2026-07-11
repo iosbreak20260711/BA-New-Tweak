@@ -56,6 +56,77 @@ jobs:
           head -30 fishhook.c
           echo "✅ 已覆蓋"
 
+      - name: 生成 Tweak.xm (還原星號)
+        run: |
+          cat > Tweak.xm <<'TWEAK_EOF'
+          #import <dlfcn.h>
+          #import <string.h>
+          #import <mach-o/dyld.h>
+          #include "fishhook.h"
+
+          static const char @STAR@kHideKeyword = "hack.dylib";
+
+          static const char @STAR@kFakeImageName = NULL;
+          static const struct mach_header @STAR@kFakeImageHeader = NULL;
+
+          static const char @STAR@(@STAR@orig_dyld_get_image_name)(uint32_t image_index);
+          static const struct mach_header @STAR@(@STAR@orig_dyld_get_image_header)(uint32_t image_index);
+
+          static const char @STAR@my_dyld_get_image_name(uint32_t image_index) {
+              const char @STAR@realName = orig_dyld_get_image_name(image_index);
+              if (realName && strstr(realName, kHideKeyword)) {
+                  return kFakeImageName;
+              }
+              return realName;
+          }
+
+          static const struct mach_header @STAR@my_dyld_get_image_header(uint32_t image_index) {
+              const char @STAR@realName = orig_dyld_get_image_name(image_index);
+              if (realName && strstr(realName, kHideKeyword)) {
+                  return kFakeImageHeader;
+              }
+              return orig_dyld_get_image_header(image_index);
+          }
+
+          static void setupFakeImageInfo(void) {
+              void @STAR@handle = dlopen("/System/Library/Frameworks/UIKit.framework/UIKit", RTLD_LAZY);
+              if (handle) {
+                  kFakeImageName = "/System/Library/Frameworks/UIKit.framework/UIKit";
+                  kFakeImageHeader = (const struct mach_header @STAR@)handle;
+                  return;
+              }
+
+              uint32_t count = _dyld_image_count();
+              for (uint32_t i = 0; i < count; i++) {
+                  const char @STAR@name = _dyld_get_image_name(i);
+                  if (name && strstr(name, "UIKit.framework/UIKit")) {
+                      kFakeImageName = name;
+                      kFakeImageHeader = _dyld_get_image_header(i);
+                      return;
+                  }
+              }
+
+              kFakeImageName = "/usr/lib/libSystem.B.dylib";
+              kFakeImageHeader = _dyld_get_image_header(0);
+          }
+
+          %ctor {
+              orig_dyld_get_image_name = (const char @STAR@(@STAR@)(uint32_t))dlsym(RTLD_DEFAULT, "_dyld_get_image_name");
+              orig_dyld_get_image_header = (const struct mach_header @STAR@(@STAR@)(uint32_t))dlsym(RTLD_DEFAULT, "_dyld_get_image_header");
+
+              setupFakeImageInfo();
+
+              struct rebinding rebindings[] = {
+                  {"_dyld_get_image_name",   (void @STAR@)my_dyld_get_image_name,   (void @STAR@@STAR@)&orig_dyld_get_image_name},
+                  {"_dyld_get_image_header", (void @STAR@)my_dyld_get_image_header, (void @STAR@@STAR@)&orig_dyld_get_image_header}
+              };
+              rebind_symbols(rebindings, sizeof(rebindings) / sizeof(struct rebinding));
+          }
+          TWEAK_EOF
+          sed -i '' "s/@STAR@/$(printf '\052')/g" Tweak.xm
+          echo "=== 還原後檢查 (應看到 void * 和 (*orig) ) ==="
+          grep -n "void \|orig_dyld" Tweak.xm
+
       - name: 編譯 dylib
         run: |
           echo "開始 make..."
