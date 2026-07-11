@@ -47,6 +47,15 @@ jobs:
           echo "已安裝的 SDK:"
           ls "$THEOS/sdks/"
 
+      - name: 抓官方 fishhook (覆蓋壞檔)
+        run: |
+          echo "從官方 repo 下載乾淨的 fishhook..."
+          curl -sL https://raw.githubusercontent.com/facebook/fishhook/main/fishhook.c -o fishhook.c
+          curl -sL https://raw.githubusercontent.com/facebook/fishhook/main/fishhook.h -o fishhook.h
+          echo "=== fishhook.c 前 30 行 ==="
+          head -30 fishhook.c
+          echo "✅ 已覆蓋"
+
       - name: 編譯 dylib
         run: |
           echo "開始 make..."
